@@ -1,0 +1,20 @@
+# Local documents
+/*.pdf
+
+# macOS
+.DS_Store
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Local tooling and secrets
+.env
+.env.*
+!.env.example
+
+# Temporary and partial downloads
+*.part
+tmp/
