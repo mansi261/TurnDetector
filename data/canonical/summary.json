@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "window_seconds": 8.0,
+  "livekit_score_point_seconds": 0.2,
+  "model_modalities": [
+    "audio"
+  ],
+  "train": {
+    "records": 50,
+    "hold": 25,
+    "end": 25,
+    "groups": 50
+  },
+  "evaluation": {
+    "records": 154,
+    "hold": 104,
+    "end": 50,
+    "audio_clips": 50,
+    "groups": 35
+  },
+  "fairness": {
+    "transcripts_exposed_to_model": false,
+    "dialogue_context_exposed_to_model": false,
+    "livekit_future_audio_exposed": false,
+    "target_sample_rate_hz": 16000,
+    "target_channels": 1
+  }
+}

@@ -1,0 +1,4 @@
+Source: LiveKit EoT Benchmark, livekit/eot-bench-data
+https://huggingface.co/datasets/livekit/eot-bench-data
+CC BY 4.0: https://creativecommons.org/licenses/by/4.0/
+Changes: selected first 50 English validation examples; joined timed words into transcripts; derived hold/end labels from silence-span ordering.
