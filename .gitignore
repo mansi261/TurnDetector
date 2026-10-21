@@ -1,6 +1,9 @@
 # Local documents
 /*.pdf
 
+# Downloaded and generated datasets
+/data/
+
 # macOS
 .DS_Store
 
