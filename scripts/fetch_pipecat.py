@@ -70,7 +70,7 @@ class Example:
 
     @property
     def filename(self) -> str:
-        return f"{self.sample_no:04d}_{self.id}.flac"
+        return f"{self.sample_no:02d}_{self.id}.flac"
 
     @property
     def relative_audio_path(self) -> Path:
