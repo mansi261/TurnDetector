@@ -1,0 +1,8 @@
+-r requirements-data.txt
+
+# Model training and batched iteration
+torch>=2.4,<3
+transformers>=4.45,<5
+numpy>=1.26,<3
+onnx>=1.17,<2
+onnxruntime>=1.19,<2

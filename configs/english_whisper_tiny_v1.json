@@ -1,0 +1,64 @@
+{
+  "experiment_name": "english_whisper_tiny_v1",
+  "objective": {
+    "hypothesis": "Fine-tuning a generic Whisper Tiny encoder on canonical English turn labels will distinguish hold from end decisions better than chance while retaining causal, low-latency inference.",
+    "primary_validation_metric": "validation_loss",
+    "primary_direction": "minimize",
+    "external_metrics": ["premature_response_rate", "missed_ending_rate", "detection_delay_s"],
+    "baseline": "fixed silence thresholds at 0.2, 0.5, and 1.0 seconds",
+    "proposed_success_criteria": [
+      "validation AUROC above 0.5",
+      "selected validation hold false-positive rate no greater than 0.05",
+      "fewer total external turn errors than the best fixed-silence baseline",
+      "warm p95 API latency below 100 milliseconds at concurrency 1"
+    ]
+  },
+  "dataset": {
+    "index_path": "data/canonical/dataset.sqlite3",
+    "snapshot_root": "data/pipecat_smart_turn_v3_2_full",
+    "language": "eng",
+    "train_split": "train",
+    "validation_split": "validation",
+    "external_split": "evaluation",
+    "external_partition": "ENG_evaluation_dev",
+    "sample_rate": 16000,
+    "window_seconds": 8.0
+  },
+  "model": {
+    "backbone": "openai/whisper-tiny",
+    "backbone_revision": "169d4a4341b33bc18d8881c4b69c2e104e1cc0af",
+    "attention_hidden_size": 128,
+    "head_hidden_sizes": [256, 64],
+    "dropout": 0.1
+  },
+  "training": {
+    "seed": 1337,
+    "epochs": 3,
+    "freeze_encoder_epochs": 1,
+    "batch_size": 16,
+    "validation_batch_size": 32,
+    "num_workers": 2,
+    "shuffle_buffer": 2048,
+    "head_learning_rate": 0.001,
+    "finetune_head_learning_rate": 0.0001,
+    "encoder_learning_rate": 0.00001,
+    "weight_decay": 0.01,
+    "warmup_fraction": 0.1,
+    "gradient_clip_norm": 1.0,
+    "selection_metric": "validation_loss",
+    "smoke_epochs": 2,
+    "smoke_train_examples": 64,
+    "smoke_validation_examples": 64
+  },
+  "threshold": {
+    "maximum_hold_false_positive_rate": 0.05
+  },
+  "evaluation": {
+    "first_score_offset_seconds": 0.0,
+    "replay_step_seconds": 0.1
+  },
+  "export": {
+    "opset": 18,
+    "calibration_examples": 1024
+  }
+}

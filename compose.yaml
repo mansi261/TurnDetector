@@ -1,0 +1,18 @@
+services:
+  turn-detector:
+    build:
+      context: .
+    image: turn-detector:baseline-v0
+    ports:
+      - "${TURN_DETECTOR_PORT:-8000}:8000"
+    environment:
+      TURN_DETECTOR_CHECKPOINT: /app/model/${TURN_DETECTOR_CHECKPOINT_FILE:-model.fp32.onnx}
+      TURN_DETECTOR_METADATA: /app/model/${TURN_DETECTOR_METADATA_FILE:-model_metadata.json}
+      TURN_DETECTOR_MODEL_VERSION: ${TURN_DETECTOR_MODEL_VERSION:-english-whisper-tiny-baseline-v0}
+      TURN_DETECTOR_THRESHOLD: ${TURN_DETECTOR_THRESHOLD:-0.5}
+    volumes:
+      - type: bind
+        source: ${TURN_DETECTOR_MODEL_DIR:-./model}
+        target: /app/model
+        read_only: true
+    restart: unless-stopped

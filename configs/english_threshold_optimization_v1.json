@@ -1,0 +1,40 @@
+{
+  "experiment_name": "english_threshold_optimization_v1",
+  "hypothesis": "A stricter decision threshold will reduce premature responses enough to lower total causal event errors, with an explicit trade-off in missed endings and delay.",
+  "baseline": {
+    "threshold": 0.5,
+    "checkpoint": "experiments/english_whisper_tiny_v1/full_interrupted_drop_last/checkpoints/best.pt",
+    "causal_report": "experiments/english_whisper_tiny_v1/baseline_v0/evaluation/ENG_evaluation_dev_report.json",
+    "causal_events": "experiments/english_whisper_tiny_v1/baseline_v0/evaluation/ENG_evaluation_dev_report_events.json",
+    "full_span_predictions": "experiments/english_whisper_tiny_v1/baseline_v0/evaluation/ENG_evaluation_dev_report_full_span_predictions.npz"
+  },
+  "search": {
+    "minimum": 0.5,
+    "maximum": 0.95,
+    "step": 0.025,
+    "primary_metric": "total_causal_event_errors",
+    "primary_direction": "minimize",
+    "tie_breakers": [
+      "premature_responses",
+      "missed_endings",
+      "detected_end_delay_median_s"
+    ]
+  },
+  "success_criteria": {
+    "required": "fewer total causal event errors than threshold 0.5",
+    "secondary": [
+      "premature_response_rate",
+      "missed_ending_rate",
+      "detected_end_delay_median_s",
+      "detected_end_delay_p95_s",
+      "full_span_accuracy",
+      "full_span_end_precision",
+      "full_span_end_recall"
+    ]
+  },
+  "data_policy": {
+    "tuning_partition": "ENG_evaluation_dev",
+    "holdouts": ["ENG_holdout_a", "ENG_holdout_b"],
+    "score_holdouts": false
+  }
+}

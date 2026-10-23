@@ -1,0 +1,42 @@
+{
+  "artifacts": {
+    "fp32": {
+      "bytes": 31865610,
+      "parity": {
+        "decisions_different_at_0_5": 0,
+        "maximum_absolute_difference": 2.2649765014648438e-06,
+        "records": 16,
+        "tolerance": 0.0001,
+        "within_tolerance": true
+      },
+      "path": "model.fp32.onnx",
+      "sha256": "b79ad05c253996a73969454496583dbce5dcf85bfec9a6b2fdf16e7d9858d9bf"
+    },
+    "int8": {
+      "bytes": 8326210,
+      "parity": {
+        "decisions_different_at_0_5": 2,
+        "maximum_absolute_difference": 0.48703470826148987,
+        "records": 16,
+        "tolerance": 0.08,
+        "within_tolerance": false
+      },
+      "path": "model.int8.onnx",
+      "sha256": "cbc6617cf3581075df710ea14813d326cb1f4a6586fe3bc6b486f6ba64edb0bf",
+      "serving_eligible": false
+    }
+  },
+  "backbone": "openai/whisper-tiny",
+  "backbone_revision": "169d4a4341b33bc18d8881c4b69c2e104e1cc0af",
+  "channels": 1,
+  "checkpoint_sha256": "ef2315dd6bad380ccdc123a8cc73c4638f7503c57cf3eb0258d608d159979b35",
+  "feature_extractor_path": "preprocessor",
+  "format_version": 1,
+  "output": "end_probability",
+  "padding": "left_zero",
+  "recommended_artifact": "fp32",
+  "sample_rate": 16000,
+  "threshold": 0.5,
+  "truncation": "latest_samples",
+  "window_seconds": 8.0
+}

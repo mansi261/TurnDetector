@@ -1,0 +1,11 @@
+.git
+.venv
+.DS_Store
+__pycache__
+*.py[cod]
+*.pdf
+data/
+experiments/
+reports/
+tests/
+tmp/
