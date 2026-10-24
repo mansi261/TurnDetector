@@ -21,7 +21,7 @@
     "index_path": "data/canonical_multilingual_v1/dataset.sqlite3",
     "snapshot_root": "data/pipecat_smart_turn_v3_2_full",
     "external_snapshot_root": "data/livekit_eot_bench_MULTI_public",
-    "audit_report": "reports/multilingual_v1_data_audit.json",
+    "audit_report": "experiments/audits/multilingual_v1_data_audit.json",
     "split_manifest": "data/canonical_multilingual_v1/MULTI_partitions.json",
     "languages": [
       "ara",

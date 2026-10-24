@@ -16,7 +16,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--index", type=Path, default=Path("data/canonical/dataset.sqlite3"))
     parser.add_argument("--language", default="eng")
     parser.add_argument(
-        "--output", type=Path, default=Path("reports/english_split_duplicate_audit.json")
+        "--output",
+        type=Path,
+        default=Path("experiments/audits/english_split_duplicate_audit.json"),
     )
     parser.add_argument("--fail-on-cross-split", action="store_true")
     return parser.parse_args()

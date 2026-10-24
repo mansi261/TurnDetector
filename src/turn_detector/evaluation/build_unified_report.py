@@ -69,7 +69,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--markdown",
         type=Path,
-        default=Path("reports/ENG_unified_three_level_evaluation_v1.md"),
+        default=root / "unified_evaluation_v1/report.md",
     )
     parser.add_argument("--bootstrap-replicates", type=int, default=2000)
     parser.add_argument("--seed", type=int, default=1337)

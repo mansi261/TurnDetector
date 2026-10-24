@@ -54,7 +54,5 @@ PYTHONPATH=src python3 -m turn_detector.training.train \
 
 ## Detailed reports
 
-- `reports/ENG_baseline_v0_development_evaluation.md`
-- `reports/ENG_baseline_v0_holdout_a_evaluation.md`
-- `reports/ENG_unified_three_level_evaluation_v1.md`
-- `reports/ENG_local_api_benchmark.md`
+- `reports/ENGLISH_AUDIT.md`
+- `reports/LOCAL_API_BENCHMARK.md`

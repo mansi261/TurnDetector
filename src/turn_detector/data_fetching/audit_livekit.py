@@ -193,7 +193,9 @@ def parse_args() -> argparse.Namespace:
         "--root", type=Path, default=Path("data/livekit_eot_bench_ENG_public_400")
     )
     parser.add_argument(
-        "--output", type=Path, default=Path("reports/livekit_ENG_public_400_audit.json")
+        "--output",
+        type=Path,
+        default=Path("experiments/audits/livekit_ENG_public_400_audit.json"),
     )
     return parser.parse_args()
 

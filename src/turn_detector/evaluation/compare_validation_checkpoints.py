@@ -59,7 +59,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--markdown",
         type=Path,
-        default=Path("reports/ENG_epoch3_validation_comparison_v1.md"),
+        default=root / "validation_comparison_v1/report.md",
     )
     return parser.parse_args()
 

@@ -55,7 +55,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--markdown",
         type=Path,
-        default=Path("reports/ENG_epoch3_causal_development_comparison_v1.md"),
+        default=root / "causal_comparison_v1/report.md",
     )
     parser.add_argument("--threshold", type=float, default=0.5)
     parser.add_argument("--bootstrap-replicates", type=int, default=2000)

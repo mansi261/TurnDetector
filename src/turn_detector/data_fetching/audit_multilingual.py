@@ -24,10 +24,14 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--audio-samples-per-stratum", type=int, default=2)
     parser.add_argument(
-        "--output-json", type=Path, default=Path("reports/multilingual_v1_data_audit.json")
+        "--output-json",
+        type=Path,
+        default=Path("experiments/audits/multilingual_v1_data_audit.json"),
     )
     parser.add_argument(
-        "--output-md", type=Path, default=Path("reports/multilingual_v1_data_audit.md")
+        "--output-md",
+        type=Path,
+        default=Path("experiments/audits/multilingual_v1_data_audit.md"),
     )
     return parser.parse_args()
 
