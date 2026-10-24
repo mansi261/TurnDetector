@@ -14,9 +14,4 @@ services:
       TURN_DETECTOR_ORT_INTRA_OP_THREADS: ${TURN_DETECTOR_ORT_INTRA_OP_THREADS:-2}
       TURN_DETECTOR_ORT_INTER_OP_THREADS: ${TURN_DETECTOR_ORT_INTER_OP_THREADS:-1}
       TURN_DETECTOR_ORT_EXECUTION_MODE: ${TURN_DETECTOR_ORT_EXECUTION_MODE:-sequential}
-    volumes:
-      - type: bind
-        source: ${TURN_DETECTOR_MODEL_DIR:-./model}
-        target: /app/model
-        read_only: true
     restart: unless-stopped
