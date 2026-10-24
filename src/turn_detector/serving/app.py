@@ -23,9 +23,10 @@ from turn_detector.serving.streaming import StreamingSession, StreamingSessionSt
 from turn_detector.utils import file_sha256
 
 
-SERVICE_VERSION = "1.5.0"
+SERVICE_VERSION = "1.7.0"
 MAX_AUDIO_BYTES = 25 * 1024 * 1024
 MAX_METRIC_EVENTS = 5000
+ROLLING_METRIC_EVENTS = 60
 STATIC_DIR = Path(__file__).parent / "static"
 
 
@@ -120,6 +121,10 @@ class APIMetrics:
         self._successful_requests = 0
         self._status_counts: Counter[int] = Counter()
         self._outcome_counts: Counter[str] = Counter()
+        self._model_total_requests: Counter[str] = Counter()
+        self._model_successful_requests: Counter[str] = Counter()
+        self._model_status_counts: dict[str, Counter[int]] = {}
+        self._model_outcome_counts: dict[str, Counter[str]] = {}
 
     def record_success(
         self,
@@ -149,6 +154,13 @@ class APIMetrics:
             self._successful_requests += 1
             self._status_counts[200] += 1
             self._outcome_counts["success"] += 1
+            model_id = result.get("model_id")
+            if model_id is not None:
+                key = str(model_id)
+                self._model_total_requests[key] += 1
+                self._model_successful_requests[key] += 1
+                self._model_status_counts.setdefault(key, Counter())[200] += 1
+                self._model_outcome_counts.setdefault(key, Counter())["success"] += 1
             self._events.append(event)
 
     def record_error(
@@ -158,6 +170,7 @@ class APIMetrics:
         *,
         api_total_ms: float,
         request_bytes: int = 0,
+        model_id: str | None = None,
     ) -> None:
         event = {
             "timestamp": time.time(),
@@ -165,11 +178,16 @@ class APIMetrics:
             "outcome": outcome,
             "api_total_ms": api_total_ms,
             "request_bytes": request_bytes,
+            "model_id": model_id,
         }
         with self._lock:
             self._total_requests += 1
             self._status_counts[status_code] += 1
             self._outcome_counts[outcome] += 1
+            if model_id is not None:
+                self._model_total_requests[model_id] += 1
+                self._model_status_counts.setdefault(model_id, Counter())[status_code] += 1
+                self._model_outcome_counts.setdefault(model_id, Counter())[outcome] += 1
             self._events.append(event)
 
     def snapshot(
@@ -178,16 +196,26 @@ class APIMetrics:
         model_version: str | None,
         model_sha256: str | None,
         threshold: float | None,
+        model_id: str | None = None,
     ) -> dict[str, object]:
         now = time.time()
         with self._lock:
-            events = list(self._events)
-            total_requests = self._total_requests
-            successful_requests = self._successful_requests
-            status_counts = dict(self._status_counts)
-            outcome_counts = dict(self._outcome_counts)
+            all_events = list(self._events)
+            if model_id is None:
+                events = all_events
+                total_requests = self._total_requests
+                successful_requests = self._successful_requests
+                status_counts = dict(self._status_counts)
+                outcome_counts = dict(self._outcome_counts)
+            else:
+                events = [event for event in all_events if event.get("model_id") == model_id]
+                total_requests = self._model_total_requests[model_id]
+                successful_requests = self._model_successful_requests[model_id]
+                status_counts = dict(self._model_status_counts.get(model_id, Counter()))
+                outcome_counts = dict(self._model_outcome_counts.get(model_id, Counter()))
 
         successes = [event for event in events if event["status_code"] == 200]
+        rolling_successes = successes[-ROLLING_METRIC_EVENTS:]
         recent_minute = [event for event in events if float(event["timestamp"]) >= now - 60]
         decisions = Counter(str(event["decision"]) for event in successes)
         probabilities = [float(event["p_end"]) for event in successes]
@@ -199,6 +227,7 @@ class APIMetrics:
             "generated_at": datetime.now(timezone.utc).isoformat(),
             "uptime_seconds": now - self.started_at,
             "service_version": SERVICE_VERSION,
+            "model_id": model_id,
             "model_version": model_version,
             "model_sha256": model_sha256,
             "threshold": threshold,
@@ -217,6 +246,22 @@ class APIMetrics:
                 "model_total": percentile_summary([float(event["model_total_ms"]) for event in successes]),
                 "preprocess": percentile_summary([float(event["preprocess_ms"]) for event in successes]),
                 "inference": percentile_summary([float(event["inference_ms"]) for event in successes]),
+            },
+            "rolling_latency_ms": {
+                "window_size": ROLLING_METRIC_EVENTS,
+                "sample_count": len(rolling_successes),
+                "api_total": percentile_summary(
+                    [float(event["api_total_ms"]) for event in rolling_successes]
+                ),
+                "model_total": percentile_summary(
+                    [float(event["model_total_ms"]) for event in rolling_successes]
+                ),
+                "preprocess": percentile_summary(
+                    [float(event["preprocess_ms"]) for event in rolling_successes]
+                ),
+                "inference": percentile_summary(
+                    [float(event["inference_ms"]) for event in rolling_successes]
+                ),
             },
             "request_bytes": percentile_summary([float(event["request_bytes"]) for event in events]),
             "outputs": {
@@ -608,13 +653,18 @@ def create_app(
         }
 
     @application.get("/metrics")
-    def metrics() -> dict[str, object]:
-        predictor: Predictor | None = application.state.predictor
+    def metrics(model: str | None = None) -> dict[str, object]:
+        runtime = select_runtime(model) if model is not None else None
+        predictor: Predictor | None = (
+            runtime.predictor if runtime is not None else application.state.predictor
+        )
         result = application.state.metrics.snapshot(
             model_version=predictor.model_version if predictor else None,
             model_sha256=predictor.model_sha256 if predictor else None,
             threshold=predictor.threshold if predictor else None,
+            model_id=runtime.spec.model_id if runtime is not None else None,
         )
+        result["selected_model_id"] = runtime.spec.model_id if runtime is not None else None
         result["default_model_id"] = application.state.default_model_id
         result["models"] = [
             runtime_summary(runtime)
@@ -650,6 +700,7 @@ def create_app(
                 "oversized_input",
                 api_total_ms=(time.perf_counter() - api_started) * 1000,
                 request_bytes=len(payload),
+                model_id=runtime.spec.model_id,
             )
             raise HTTPException(status_code=413, detail="audio exceeds 25 MiB")
         if not payload:
@@ -657,6 +708,7 @@ def create_app(
                 400,
                 "empty_input",
                 api_total_ms=(time.perf_counter() - api_started) * 1000,
+                model_id=runtime.spec.model_id,
             )
             raise HTTPException(status_code=400, detail="audio is empty")
         try:
@@ -668,6 +720,7 @@ def create_app(
                 "invalid_audio",
                 api_total_ms=(time.perf_counter() - api_started) * 1000,
                 request_bytes=len(payload),
+                model_id=runtime.spec.model_id,
             )
             raise HTTPException(status_code=400, detail=str(error)) from error
         except Exception:
@@ -676,6 +729,7 @@ def create_app(
                 "server_error",
                 api_total_ms=(time.perf_counter() - api_started) * 1000,
                 request_bytes=len(payload),
+                model_id=runtime.spec.model_id,
             )
             raise
         application.state.metrics.record_success(
@@ -736,6 +790,7 @@ def create_app(
                     "oversized_stream_chunk",
                     api_total_ms=(time.perf_counter() - api_started) * 1000,
                     request_bytes=len(payload),
+                    model_id=runtime.spec.model_id,
                 )
                 raise HTTPException(status_code=413, detail="stream chunk exceeds one window")
         try:
@@ -752,6 +807,7 @@ def create_app(
                 "invalid_stream_audio",
                 api_total_ms=(time.perf_counter() - api_started) * 1000,
                 request_bytes=len(payload),
+                model_id=runtime.spec.model_id,
             )
             raise HTTPException(status_code=400, detail=str(error)) from error
         except Exception:
@@ -760,6 +816,7 @@ def create_app(
                 "server_error",
                 api_total_ms=(time.perf_counter() - api_started) * 1000,
                 request_bytes=len(payload),
+                model_id=runtime.spec.model_id,
             )
             raise
         application.state.metrics.record_success(

@@ -213,8 +213,8 @@ PYTHONPATH=src uvicorn turn_detector.serving.app:app --host 127.0.0.1 --port 800
 Open `http://127.0.0.1:8000` for the microphone probability timeline. Select
 English or multilingual before starting the microphone. The frontend sends a
 rolling audio window; its chart cadence is not a silence rule.
-Use the **API dashboard** tab to inspect live request, p50/p95 latency,
-throughput, probability-distribution, and decision metrics. Error and p99
+Use the **API dashboard** tab to filter English or multilingual live request,
+lifetime p50, rolling 60-request p95, throughput, probability-distribution, and decision metrics. Error and p99
 telemetry remain available from `GET /metrics` for diagnostics.
 
 - `GET /health` is a process liveness check.
@@ -325,6 +325,9 @@ PYTHONPATH=src python3 -m turn_detector.serving.benchmark \
   --streaming-replays 2 \
   --output experiments/english_whisper_tiny_v1/baseline_v0/streaming_preprocessing_benchmark_v1.json
 ```
+
+The measured local latency, throughput, monitoring, and improvement findings
+are summarized in `reports/ENG_local_api_benchmark.md`.
 
 ## Reproduce the 14-language model
 

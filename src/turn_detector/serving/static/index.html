@@ -105,16 +105,21 @@
       <div class="dashboard-head">
         <div>
           <h1>API dashboard</h1>
-          <p class="subtle">Live process-local metrics since the service started.</p>
+          <p class="subtle">Live process-local metrics for the selected model.</p>
         </div>
-        <div class="live"><span class="dot" id="dashboard-dot"></span><span id="dashboard-status">Waiting</span><button id="refresh">Refresh</button></div>
+        <div class="live">
+          <label class="model-picker" for="metrics-model-select">Metrics for
+            <select id="metrics-model-select" disabled aria-label="Dashboard model"></select>
+          </label>
+          <span class="dot" id="dashboard-dot"></span><span id="dashboard-status">Waiting</span><button id="refresh">Refresh</button>
+        </div>
       </div>
 
       <div class="dashboard-grid">
         <div class="metric"><span class="label">Prediction requests</span><span class="value" id="metric-requests">—</span><span class="target" id="metric-success">—</span></div>
         <div class="metric"><span class="label">Predictions / minute</span><span class="value" id="metric-throughput">—</span><span class="target">Rolling 60 seconds</span></div>
         <div class="metric"><span class="label">API latency p50</span><span class="value" id="metric-p50">—</span><span class="target">Median latency</span></div>
-        <div class="metric"><span class="label">API latency p95</span><span class="value" id="metric-p95">—</span><span class="target">Target &lt; 100 ms</span></div>
+        <div class="metric"><span class="label">Rolling API p95</span><span class="value" id="metric-p95">—</span><span class="target">Latest 60 successful requests</span></div>
         <div class="metric"><span class="label">Average p(end)</span><span class="value" id="metric-probability">—</span><span class="target">Successful requests</span></div>
         <div class="metric"><span class="label">Hold decisions</span><span class="value" id="metric-holds">—</span><span class="target" id="metric-hold-rate">—</span></div>
         <div class="metric"><span class="label">End decisions</span><span class="value" id="metric-ends">—</span><span class="target" id="metric-end-rate">—</span></div>
@@ -135,7 +140,7 @@
         <section class="panel table-panel">
           <h2>Latency percentiles</h2>
           <table>
-            <thead><tr><th>Stage</th><th>p50</th><th>p95</th></tr></thead>
+            <thead><tr><th>Stage</th><th>p50</th><th>Rolling p95</th></tr></thead>
             <tbody id="latency-table"></tbody>
           </table>
         </section>
@@ -383,12 +388,13 @@
     function renderMetrics(metrics) {
       lastMetrics = metrics;
       const requests = metrics.requests, outputs = metrics.outputs, decisions = outputs.decisions;
+      const rollingLatency = metrics.rolling_latency_ms || metrics.latency_ms;
       const decisionTotal = decisions.hold + decisions.end;
       el('metric-requests').textContent = requests.total.toLocaleString();
       el('metric-success').textContent = `${requests.successful.toLocaleString()} successful`;
       el('metric-throughput').textContent = requests.requests_last_minute.toLocaleString();
       el('metric-p50').textContent = formatMs(metrics.latency_ms.api_total.p50);
-      el('metric-p95').textContent = formatMs(metrics.latency_ms.api_total.p95);
+      el('metric-p95').textContent = formatMs(rollingLatency.api_total.p95);
       el('metric-probability').textContent = outputs.average_p_end == null ? '—' : outputs.average_p_end.toFixed(3);
       el('metric-holds').textContent = decisions.hold.toLocaleString();
       el('metric-ends').textContent = decisions.end.toLocaleString();
@@ -396,12 +402,12 @@
       el('metric-end-rate').textContent = decisionTotal ? `${(decisions.end / decisionTotal * 100).toFixed(1)}% of decisions` : 'No decisions yet';
 
       const rows = [
-        ['API total', metrics.latency_ms.api_total],
-        ['Model pipeline', metrics.latency_ms.model_total],
-        ['Preprocessing', metrics.latency_ms.preprocess],
-        ['Inference', metrics.latency_ms.inference],
+        ['API total', metrics.latency_ms.api_total, rollingLatency.api_total],
+        ['Model pipeline', metrics.latency_ms.model_total, rollingLatency.model_total],
+        ['Preprocessing', metrics.latency_ms.preprocess, rollingLatency.preprocess],
+        ['Inference', metrics.latency_ms.inference, rollingLatency.inference],
       ];
-      el('latency-table').innerHTML = rows.map(([name, values]) => `<tr><td>${name}</td><td>${formatMs(values.p50)}</td><td>${formatMs(values.p95)}</td></tr>`).join('');
+      el('latency-table').innerHTML = rows.map(([name, lifetime, rolling]) => `<tr><td>${name}</td><td>${formatMs(lifetime.p50)}</td><td>${formatMs(rolling.p95)}</td></tr>`).join('');
       el('identity-model').textContent = metrics.model_version || 'Not loaded';
       el('identity-threshold').textContent = metrics.threshold == null ? '—' : metrics.threshold.toFixed(2);
       el('identity-service').textContent = metrics.service_version;
@@ -414,10 +420,13 @@
     }
 
     async function refreshMetrics() {
+      const modelId = el('metrics-model-select').value;
+      if (!modelId) return;
       try {
-        const response = await fetch('/metrics', { cache: 'no-store' });
+        const response = await fetch(`/metrics?model=${encodeURIComponent(modelId)}`, { cache: 'no-store' });
         if (!response.ok) throw new Error(response.statusText);
-        renderMetrics(await response.json());
+        const metrics = await response.json();
+        if (el('metrics-model-select').value === modelId) renderMetrics(metrics);
       } catch (error) {
         el('dashboard-dot').classList.remove('ok'); el('dashboard-status').textContent = `Unavailable: ${error.message}`;
       }
@@ -445,8 +454,11 @@
         }];
         availableModels = new Map(models.map(model => [model.id, model]));
         el('model-select').replaceChildren(...models.map(model => new Option(model.display_name, model.id)));
+        el('metrics-model-select').replaceChildren(...models.map(model => new Option(model.display_name, model.id)));
         el('model-select').value = result.default_model_id || models[0].id;
+        el('metrics-model-select').value = result.default_model_id || models[0].id;
         el('model-select').disabled = false;
+        el('metrics-model-select').disabled = false;
         applySelectedModel();
         el('start').disabled = false;
       } catch (error) { el('status').textContent = `Unavailable: ${error.message}`; }
@@ -464,6 +476,7 @@
 
     document.querySelectorAll('.tab').forEach(button => button.addEventListener('click', () => selectView(button.dataset.view)));
     el('model-select').addEventListener('change', applySelectedModel);
+    el('metrics-model-select').addEventListener('change', refreshMetrics);
     el('start').addEventListener('click', start); el('stop').addEventListener('click', stop); el('refresh').addEventListener('click', refreshMetrics);
     window.addEventListener('resize', () => { drawTimeline(); if (lastMetrics) { drawLatencyChart(lastMetrics); drawDistributionChart(lastMetrics); } });
     initialize();
