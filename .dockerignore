@@ -9,3 +9,4 @@ experiments/
 reports/
 tests/
 tmp/
+model/checkpoints/

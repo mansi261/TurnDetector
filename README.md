@@ -33,6 +33,10 @@ Then use:
 - Demo and API dashboard: `http://127.0.0.1:8000`
 - API metrics: `http://127.0.0.1:8000/metrics`
 
+The demo model dropdown selects either **English** or **Multilingual — 14
+languages** before the microphone session starts. The selected model remains
+fixed for that session.
+
 To call the model with a 16 kHz WAV or FLAC file:
 
 ```bash
@@ -41,7 +45,10 @@ curl --fail --request POST \
   http://127.0.0.1:8000/predict
 ```
 
-The response contains `p_end`, the `hold` or `end` decision, the active
+Add `?model=multilingual` to use the multilingual artifact. English is the
+default.
+
+The response contains `p_end`, the `hold` or `end` decision, selected model ID,
 threshold, model version, and preprocessing/inference timing.
 
 View container logs or stop the service with:
@@ -149,17 +156,18 @@ Install the training dependencies:
 python3 -m pip install -r requirements-train.txt
 ```
 
-The current PyTorch iterable loader streams the original Parquet snapshot:
+The canonical PyTorch iterable loader streams indexed rows from the original
+Parquet snapshot:
 
 ```python
 from torch.utils.data import DataLoader
-from turn_detector.data_loader import (
-    PipecatParquetDataset,
-    PipecatTorchIterableDataset,
-)
+from turn_detector.data_loader import CanonicalPipecatDataset
 
-snapshot = PipecatParquetDataset("data/pipecat_smart_turn_v3_2_full")
-training_data = PipecatTorchIterableDataset(snapshot, language="eng")
+training_data = CanonicalPipecatDataset(
+    "data/canonical/dataset.sqlite3",
+    split="train",
+    language="eng",
+)
 loader = DataLoader(training_data, batch_size=16, num_workers=4)
 
 for batch in loader:
@@ -202,15 +210,23 @@ TURN_DETECTOR_THRESHOLD=0.5 \
 PYTHONPATH=src uvicorn turn_detector.serving.app:app --host 127.0.0.1 --port 8000
 ```
 
-Open `http://127.0.0.1:8000` for the microphone probability timeline. The
-frontend sends a rolling audio window; its chart cadence is not a silence rule.
-Use the **API dashboard** tab to inspect live request, latency, error, throughput,
-probability-distribution, and decision metrics.
+Open `http://127.0.0.1:8000` for the microphone probability timeline. Select
+English or multilingual before starting the microphone. The frontend sends a
+rolling audio window; its chart cadence is not a silence rule.
+Use the **API dashboard** tab to inspect live request, p50/p95 latency,
+throughput, probability-distribution, and decision metrics. Error and p99
+telemetry remain available from `GET /metrics` for diagnostics.
 
 - `GET /health` is a process liveness check.
-- `GET /ready` confirms the model, metadata, preprocessing, threshold, and provider are loaded.
+- `GET /ready` lists the loaded models and confirms their identity and threshold.
 - `GET /metrics` returns bounded, process-local API and model-output telemetry.
-- `POST /predict` accepts a 16 kHz WAV or FLAC file in the `audio` multipart field and returns `p_end`, the thresholded decision, model version, and timing.
+- `POST /predict?model=english|multilingual` accepts a 16 kHz WAV or FLAC file
+  in the `audio` multipart field.
+- `POST /stream?model=english|multilingual` creates an isolated, model-pinned
+  microphone session. Send new 16 kHz mono
+  PCM16 samples to `POST /stream/{session_id}/predict`, then release the state
+  with `DELETE /stream/{session_id}`. The server reuses unchanged Whisper feature
+  frames while preserving the same eight-second input window.
 
 The local telemetry retains at most 5,000 request summaries and resets when the
 service restarts. It is intended to demonstrate the monitoring contract, not to
@@ -254,14 +270,16 @@ PYTHONPATH=src .venv/bin/python -m turn_detector.evaluation.compare_causal_check
 The event-level trade-off is documented in
 [`reports/ENG_epoch3_causal_development_comparison_v1.md`](reports/ENG_epoch3_causal_development_comparison_v1.md).
 
-The checkpoint path, metadata path, version, and threshold are configured with
-`TURN_DETECTOR_CHECKPOINT`, `TURN_DETECTOR_METADATA`,
+Docker uses `model/serving_models.json` to load both selectable artifacts once
+at startup. Single-model deployments can omit `TURN_DETECTOR_MODEL_MANIFEST`
+and configure `TURN_DETECTOR_CHECKPOINT`, `TURN_DETECTOR_METADATA`,
 `TURN_DETECTOR_MODEL_VERSION`, and `TURN_DETECTOR_THRESHOLD`. The service
-rejects a checkpoint whose SHA-256 is not declared in the selected metadata.
+rejects a checkpoint whose SHA-256 is not declared in its metadata.
 
 Call the service with a file:
 
 ```bash
+python3 -m pip install -r requirements-tools.txt
 PYTHONPATH=src python3 -m turn_detector.serving.client --audio sample.wav
 ```
 
@@ -297,6 +315,93 @@ PYTHONPATH=src python3 -m turn_detector.serving.verify_parity \
   --output experiments/english_whisper_tiny_v1/baseline_v0/serving_parity.json
 ```
 
+Compare repeated full-window requests with incremental feature reuse:
+
+```bash
+PYTHONPATH=src python3 -m turn_detector.serving.benchmark \
+  --audio experiments/english_whisper_tiny_v1/baseline_v0/serving_benchmark_input.wav \
+  --requests 20 \
+  --concurrency 1 \
+  --streaming-replays 2 \
+  --output experiments/english_whisper_tiny_v1/baseline_v0/streaming_preprocessing_benchmark_v1.json
+```
+
+## Reproduce the 14-language model
+
+The multilingual cycle is isolated from the English index and checkpoint. It
+covers `ara`, `deu`, `eng`, `fra`, `hin`, `ind`, `ita`, `jpn`, `kor`, `nld`,
+`por`, `spa`, `tur`, and `zho`.
+
+The exact English initialization and selected multilingual PyTorch checkpoints
+are packaged under `model/checkpoints/` for reproducibility and are excluded
+from the runtime container. Their SHA-256 values are verified by the training
+and evaluation commands.
+
+Fetch LiveKit, build the canonical index, and run the audit:
+
+```bash
+PYTHONPATH=src python3 -m turn_detector.data_fetching.fetch_livekit \
+  --output data/livekit_eot_bench_MULTI_public \
+  --languages en,ar,de,es,fr,hi,id,it,ja,ko,nl,pt,tr,zh
+PYTHONPATH=src python3 -m turn_detector.data_fetching.build_multilingual_index
+PYTHONPATH=src python3 -m turn_detector.data_fetching.audit_multilingual
+```
+
+Smoke-test the actual training path, then run the complete frozen-encoder pass:
+
+```bash
+PYTHONPATH=src python3 -m turn_detector.training.train_multilingual \
+  --smoke --device mps --output-name smoke_integrity_v1 \
+  --initialization-checkpoint model/checkpoints/english_baseline_v0.pt
+PYTHONPATH=src python3 -m turn_detector.training.train_multilingual \
+  --device mps --output-name full_v1 \
+  --initialization-checkpoint model/checkpoints/english_baseline_v0.pt
+```
+
+Use `--device cpu` on systems without Apple MPS. Interrupted full runs resume
+from `full_v1/checkpoints/latest.pt` with `--resume-from` and the same
+`--output-name`.
+
+Compare Baseline v0 and the candidate on multilingual development data, then
+export and verify the candidate:
+
+```bash
+PYTHONPATH=src python3 -m turn_detector.evaluation.evaluate_multilingual \
+  --baseline-checkpoint model/checkpoints/english_baseline_v0.pt \
+  --candidate-checkpoint model/checkpoints/multilingual_v1.pt \
+  --output experiments/multilingual_whisper_tiny_v1/full_v1/evaluation/development_report.json \
+  --device mps
+PYTHONPATH=src python3 -m turn_detector.training.export_multilingual \
+  --checkpoint model/checkpoints/multilingual_v1.pt
+PYTHONPATH=src python3 -m turn_detector.serving.verify_multilingual_parity \
+  --training-checkpoint model/checkpoints/multilingual_v1.pt \
+  --serving-checkpoint model/multilingual_v1/model.fp32.onnx \
+  --metadata model/multilingual_v1/model_metadata.json \
+  --output experiments/multilingual_whisper_tiny_v1/full_v1/serving_parity.json
+```
+
+The holdout command requires a frozen manifest and is intended for one final
+run only. Do not use its result to tune the same candidate.
+
+```bash
+PYTHONPATH=src python3 -m turn_detector.evaluation.freeze_multilingual_candidate \
+  --baseline-checkpoint model/checkpoints/english_baseline_v0.pt \
+  --candidate-checkpoint model/checkpoints/multilingual_v1.pt \
+  --development-report experiments/multilingual_whisper_tiny_v1/full_v1/evaluation/development_report.json \
+  --serving-metadata model/multilingual_v1/model_metadata.json \
+  --output experiments/multilingual_whisper_tiny_v1/full_v1/frozen_candidate.json
+PYTHONPATH=src python3 -m turn_detector.evaluation.evaluate_multilingual \
+  --baseline-checkpoint model/checkpoints/english_baseline_v0.pt \
+  --candidate-checkpoint model/checkpoints/multilingual_v1.pt \
+  --partition MULTI_holdout --allow-holdout \
+  --freeze-manifest experiments/multilingual_whisper_tiny_v1/full_v1/frozen_candidate.json \
+  --output experiments/multilingual_whisper_tiny_v1/full_v1/evaluation/holdout_report.json \
+  --device mps
+```
+
+The default Docker service loads both English and multilingual artifacts. Use
+the model dropdown in the demo or the `model` API query parameter to choose one.
+
 ## Docker
 
 The repository includes the verified FP32 serving artifact, its preprocessing
@@ -317,6 +422,15 @@ curl http://127.0.0.1:8000/ready
 
 Stop it with `docker compose down`.
 
+If dependency installation fails, show the package-level error rather than only
+Docker's final summary line:
+
+```bash
+docker compose --progress=plain build --no-cache
+```
+
+The image retries slow package downloads and uses a two-minute download timeout.
+
 The Compose defaults serve Baseline v0 at threshold `0.5`. Override the host
 port, threshold, version, or model directory without changing code:
 
@@ -328,14 +442,22 @@ TURN_DETECTOR_MODEL_DIR=/absolute/path/to/export \
 docker compose up --build
 ```
 
+ONNX Runtime CPU settings are also configurable without rebuilding:
+
+```bash
+TURN_DETECTOR_ORT_INTRA_OP_THREADS=2 \
+TURN_DETECTOR_ORT_INTER_OP_THREADS=1 \
+TURN_DETECTOR_ORT_EXECUTION_MODE=sequential \
+docker compose up -d --force-recreate
+```
+
+Use `0` for either thread count to retain ONNX Runtime's automatic default.
+The Docker default is the measured two-intra-op/one-inter-op configuration. The
+active settings and visible CPU count are returned by `/ready`.
+
 The mounted model directory must contain the selected ONNX checkpoint, metadata,
 and the metadata-referenced `preprocessor/` directory. If filenames differ, set
 `TURN_DETECTOR_CHECKPOINT_FILE` and `TURN_DETECTOR_METADATA_FILE`. The container
-runs as a non-root user, loads the model once during startup, and exposes
-`/health`, `/ready`, `/predict`, and `/metrics` on port 8000 inside the container.
-
-## Production monitoring and improvement
-
-The proposed service metrics, model-quality signals, alert thresholds, drift
-checks, rollback procedure, and feedback loop are documented in
-[`reports/production_monitoring_and_improvement.md`](reports/production_monitoring_and_improvement.md).
+runs as a non-root user, loads the model once during startup, and exposes the
+health, readiness, file-prediction, streaming, and metrics routes on port 8000
+inside the container.

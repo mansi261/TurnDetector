@@ -7,19 +7,22 @@ from datetime import datetime, timezone
 import hashlib
 import json
 from pathlib import Path
-import subprocess
 import sys
 from typing import Any
 
 import numpy as np
 
-from turn_detector.evaluation.build_unified_report import (
+from turn_detector.evaluation.causal import (
     causal_breakdown,
     causal_summary,
-    file_sha256,
     grouped_bootstrap,
     rescore_events,
 )
+from turn_detector.evaluation.metrics import (
+    format_percent as percent,
+    format_percentage_delta as percentage_delta,
+)
+from turn_detector.utils import command_output, file_sha256
 
 
 def parse_args() -> argparse.Namespace:
@@ -58,15 +61,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--bootstrap-replicates", type=int, default=2000)
     parser.add_argument("--seed", type=int, default=1337)
     return parser.parse_args()
-
-
-def command_output(*command: str) -> str | None:
-    try:
-        return subprocess.run(
-            command, check=True, capture_output=True, text=True
-        ).stdout.strip()
-    except (OSError, subprocess.CalledProcessError):
-        return None
 
 
 def validate_inputs(
@@ -252,14 +246,6 @@ def classification_difference(
             "false_negative",
         )
     }
-
-
-def percent(value: float) -> str:
-    return f"{value * 100:.2f}%"
-
-
-def percentage_delta(value: float) -> str:
-    return f"{value * 100:+.2f} pp"
 
 
 def milliseconds(value: float | None) -> str:

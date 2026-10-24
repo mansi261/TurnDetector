@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import shutil
@@ -15,6 +16,14 @@ DATASET = "pipecat-ai/smart-turn-data-v3.2-train"
 SPLIT = "train"
 DEFAULT_REVISION = "f8c95d284595defb6b88a715c356cbc5c31b7ad1"
 DEFAULT_OUTPUT = Path("data/pipecat_smart_turn_v3_2_full")
+
+
+def sha256_file(path: Path, chunk_size: int = 8 * 1024 * 1024) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        while chunk := stream.read(chunk_size):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def snapshot_plan(revision: str) -> dict[str, Any]:
@@ -111,13 +120,23 @@ def fetch_snapshot(
         if (repository / shard["path"]).is_file()
         and (repository / shard["path"]).stat().st_size != shard["bytes"]
     ]
-    if missing or size_mismatches:
+    checksum_mismatches = [
+        shard["path"]
+        for shard in plan["shards"]
+        if (repository / shard["path"]).is_file()
+        and (repository / shard["path"]).stat().st_size == shard["bytes"]
+        and shard["sha256"]
+        and sha256_file(repository / shard["path"]) != shard["sha256"]
+    ]
+    if missing or size_mismatches or checksum_mismatches:
         raise RuntimeError(
             f"snapshot verification failed: {len(missing)} missing, "
-            f"{len(size_mismatches)} size mismatches"
+            f"{len(size_mismatches)} size mismatches, "
+            f"{len(checksum_mismatches)} checksum mismatches"
         )
 
     plan["repository_path"] = os.path.relpath(repository, output)
+    plan["verification"] = "size and SHA-256 verified"
     manifest_part.write_text(json.dumps(plan, indent=2) + "\n", encoding="utf-8")
     os.replace(manifest_part, output / "snapshot_manifest.json")
     print(f"complete dataset ready: {repository}")

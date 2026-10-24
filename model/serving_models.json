@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "default_model": "english",
+  "models": [
+    {
+      "id": "english",
+      "display_name": "English",
+      "checkpoint": "model.fp32.onnx",
+      "metadata": "model_metadata.json",
+      "model_version": "english-whisper-tiny-baseline-v0"
+    },
+    {
+      "id": "multilingual",
+      "display_name": "Multilingual — 14 languages",
+      "checkpoint": "multilingual_v1/model.fp32.onnx",
+      "metadata": "multilingual_v1/model_metadata.json",
+      "model_version": "multilingual-whisper-tiny-v1"
+    }
+  ]
+}

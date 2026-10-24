@@ -1,0 +1,121 @@
+{
+  "artifacts": {
+    "fp32": {
+      "bytes": 31865610,
+      "parity": {
+        "by_language": {
+          "ara": {
+            "decision_mismatches": 0,
+            "maximum_absolute_difference": 1.5497207641601562e-06,
+            "records": 2
+          },
+          "deu": {
+            "decision_mismatches": 0,
+            "maximum_absolute_difference": 5.960464477539063e-08,
+            "records": 2
+          },
+          "eng": {
+            "decision_mismatches": 0,
+            "maximum_absolute_difference": 1.1324882507324219e-06,
+            "records": 2
+          },
+          "fra": {
+            "decision_mismatches": 0,
+            "maximum_absolute_difference": 4.041066858917475e-08,
+            "records": 2
+          },
+          "hin": {
+            "decision_mismatches": 0,
+            "maximum_absolute_difference": 7.152557373046875e-07,
+            "records": 2
+          },
+          "ind": {
+            "decision_mismatches": 0,
+            "maximum_absolute_difference": 3.5762786865234375e-07,
+            "records": 2
+          },
+          "ita": {
+            "decision_mismatches": 0,
+            "maximum_absolute_difference": 1.2218952178955078e-06,
+            "records": 2
+          },
+          "jpn": {
+            "decision_mismatches": 0,
+            "maximum_absolute_difference": 5.364418029785156e-07,
+            "records": 2
+          },
+          "kor": {
+            "decision_mismatches": 0,
+            "maximum_absolute_difference": 2.384185791015625e-07,
+            "records": 2
+          },
+          "nld": {
+            "decision_mismatches": 0,
+            "maximum_absolute_difference": 1.5497207641601562e-06,
+            "records": 2
+          },
+          "por": {
+            "decision_mismatches": 0,
+            "maximum_absolute_difference": 1.1920928955078125e-06,
+            "records": 2
+          },
+          "spa": {
+            "decision_mismatches": 0,
+            "maximum_absolute_difference": 5.140900611877441e-07,
+            "records": 2
+          },
+          "tur": {
+            "decision_mismatches": 0,
+            "maximum_absolute_difference": 5.960464477539063e-08,
+            "records": 2
+          },
+          "zho": {
+            "decision_mismatches": 0,
+            "maximum_absolute_difference": 8.344650268554688e-07,
+            "records": 2
+          }
+        },
+        "decision_mismatches_at_0_5": 0,
+        "maximum_absolute_difference": 1.5497207641601562e-06,
+        "records": 28,
+        "tolerance": 0.0001,
+        "within_tolerance": true
+      },
+      "path": "model.fp32.onnx",
+      "serving_eligible": true,
+      "sha256": "c6a32108a4428132bc2eb4033451b85bc874920ae43bbabfa26d842baa352703"
+    }
+  },
+  "backbone": "openai/whisper-tiny",
+  "backbone_revision": "169d4a4341b33bc18d8881c4b69c2e104e1cc0af",
+  "channels": 1,
+  "checkpoint_sha256": "c813264ec85e0013a7e96e5391536e2d6d6a7df2322c8020751fd3ae684367d4",
+  "created_utc": "2026-10-23T09:35:53.893824+00:00",
+  "feature_extractor_path": "preprocessor",
+  "format_version": 1,
+  "language_scope": [
+    "ara",
+    "deu",
+    "eng",
+    "fra",
+    "hin",
+    "ind",
+    "ita",
+    "jpn",
+    "kor",
+    "nld",
+    "por",
+    "spa",
+    "tur",
+    "zho"
+  ],
+  "model_version": "multilingual_whisper_tiny_v1",
+  "output": "end_probability",
+  "padding": "left_zero",
+  "recommended_artifact": "fp32",
+  "sample_rate": 16000,
+  "threshold": 0.5,
+  "truncation": "latest_samples",
+  "waveform_normalization": "none",
+  "window_seconds": 8.0
+}

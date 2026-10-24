@@ -1,0 +1,95 @@
+{
+  "experiment_name": "multilingual_whisper_tiny_v1",
+  "objective": {
+    "hypothesis": "Adapting the English turn-decision head on a full 14-language Pipecat pass will reduce macro causal turn error on multilingual LiveKit audio relative to the unchanged English Baseline v0.",
+    "primary_validation_metric": "macro_language_validation_loss",
+    "primary_direction": "minimize",
+    "development_primary_metric": "macro_language_causal_event_error_rate",
+    "baseline": "English Baseline v0 zero-shot on the identical multilingual evaluation partition",
+    "promotion_criteria": {
+      "macro_causal_event_error_delta_maximum": -0.000001,
+      "macro_premature_response_rate_delta_maximum": 0.02,
+      "macro_missed_ending_rate_delta_maximum": 0.02,
+      "worst_language_causal_error_regression_maximum": 0.1,
+      "onnx_probability_maximum_absolute_difference": 0.0001,
+      "onnx_decision_mismatches": 0,
+      "api_p95_latency_target_ms": 100.0,
+      "cross_split_exact_audio_duplicate_groups": 0
+    }
+  },
+  "dataset": {
+    "index_path": "data/canonical_multilingual_v1/dataset.sqlite3",
+    "snapshot_root": "data/pipecat_smart_turn_v3_2_full",
+    "external_snapshot_root": "data/livekit_eot_bench_MULTI_public",
+    "audit_report": "reports/multilingual_v1_data_audit.json",
+    "split_manifest": "data/canonical_multilingual_v1/MULTI_partitions.json",
+    "languages": [
+      "ara",
+      "deu",
+      "eng",
+      "fra",
+      "hin",
+      "ind",
+      "ita",
+      "jpn",
+      "kor",
+      "nld",
+      "por",
+      "spa",
+      "tur",
+      "zho"
+    ],
+    "train_split": "train",
+    "validation_split": "validation",
+    "evaluation_partition": "MULTI_evaluation",
+    "holdout_partition": "MULTI_holdout",
+    "sample_rate": 16000,
+    "window_seconds": 8.0,
+    "normalize_waveform": false,
+    "sampling": {
+      "strategy": "full_coverage_grouped_shuffle",
+      "temperature_exponent": null,
+      "rationale": "One pass sees every record once; temperature replacement would omit records and repeat synthetic-heavy minority languages."
+    }
+  },
+  "initialization": {
+    "checkpoint": "experiments/english_whisper_tiny_v1/full_interrupted_drop_last/checkpoints/best.pt",
+    "checkpoint_sha256": "ef2315dd6bad380ccdc123a8cc73c4638f7503c57cf3eb0258d608d159979b35",
+    "reset_optimizer": true,
+    "reset_scheduler": true
+  },
+  "model": {
+    "backbone": "openai/whisper-tiny",
+    "backbone_revision": "169d4a4341b33bc18d8881c4b69c2e104e1cc0af",
+    "attention_hidden_size": 128,
+    "head_hidden_sizes": [256, 64],
+    "dropout": 0.1
+  },
+  "training": {
+    "seed": 1337,
+    "epochs": 1,
+    "encoder_frozen": true,
+    "batch_size": 16,
+    "validation_batch_size": 32,
+    "num_workers": 0,
+    "head_learning_rate": 0.0001,
+    "weight_decay": 0.01,
+    "warmup_fraction": 0.1,
+    "gradient_clip_norm": 1.0,
+    "checkpoint_interval_steps": 500,
+    "smoke_checkpoint_interval_steps": 1
+  },
+  "threshold": {
+    "value": 0.5,
+    "tuned": false
+  },
+  "evaluation": {
+    "first_score_offset_seconds": 0.0,
+    "replay_step_seconds": 0.1,
+    "fixed_silence_seconds": [0.2, 0.5, 1.0]
+  },
+  "export": {
+    "opset": 18,
+    "format": "fp32"
+  }
+}

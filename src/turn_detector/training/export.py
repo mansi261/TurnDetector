@@ -14,7 +14,8 @@ from torch.utils.data import DataLoader
 
 from turn_detector.data_loader import CanonicalPipecatDataset
 from turn_detector.models import WaveformFeatureExtractor, load_model_checkpoint
-from turn_detector.training.train import FeatureCollator, file_sha256, read_config
+from turn_detector.training.train import FeatureCollator, read_config
+from turn_detector.utils import file_sha256
 
 
 def parse_args() -> argparse.Namespace:

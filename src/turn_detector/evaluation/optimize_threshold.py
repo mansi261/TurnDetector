@@ -11,13 +11,13 @@ import json
 from pathlib import Path
 import platform
 import statistics
-import subprocess
 import sys
 from typing import Any
 
 import numpy as np
 
 from turn_detector.training.train import binary_metrics
+from turn_detector.utils import file_sha256, git_value
 
 
 def parse_args() -> argparse.Namespace:
@@ -33,23 +33,6 @@ def parse_args() -> argparse.Namespace:
         default=Path("experiments/english_whisper_tiny_v1/threshold_optimization_v1"),
     )
     return parser.parse_args()
-
-
-def file_sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as stream:
-        for block in iter(lambda: stream.read(1024 * 1024), b""):
-            digest.update(block)
-    return digest.hexdigest()
-
-
-def git_value(*args: str) -> str | None:
-    try:
-        return subprocess.run(
-            ("git", *args), check=True, capture_output=True, text=True
-        ).stdout.strip()
-    except (OSError, subprocess.CalledProcessError):
-        return None
 
 
 def threshold_grid(search: dict[str, Any]) -> list[float]:

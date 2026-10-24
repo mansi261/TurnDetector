@@ -13,7 +13,6 @@ from pathlib import Path
 import platform
 import random
 import sqlite3
-import subprocess
 import sys
 import time
 from typing import Any
@@ -29,6 +28,7 @@ from turn_detector.models import (
     WhisperTurnDetector,
     load_model_checkpoint,
 )
+from turn_detector.utils import command_output, file_sha256
 
 
 def parse_args() -> argparse.Namespace:
@@ -70,14 +70,6 @@ def seed_everything(seed: int) -> None:
         torch.cuda.manual_seed_all(seed)
 
 
-def file_sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as stream:
-        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
-
-
 def source_sha256() -> str:
     digest = hashlib.sha256()
     roots = (Path("src"), Path("configs"))
@@ -94,15 +86,6 @@ def source_sha256() -> str:
         digest.update(path.read_bytes())
         digest.update(b"\0")
     return digest.hexdigest()
-
-
-def command_output(*command: str) -> str | None:
-    try:
-        return subprocess.run(
-            command, check=True, capture_output=True, text=True
-        ).stdout.strip()
-    except (OSError, subprocess.CalledProcessError):
-        return None
 
 
 def split_identity(index_path: Path, language: str) -> dict[str, Any]:

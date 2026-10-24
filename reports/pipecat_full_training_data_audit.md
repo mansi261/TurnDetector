@@ -68,8 +68,8 @@ The ignored local directory
 `data/pipecat_smart_turn_v3_2_full/snapshot_manifest.json` records the immutable
 revision and every expected shard and byte size.
 `src/turn_detector/data_fetching/fetch_pipecat.py`
-recreates and verifies the snapshot; `PipecatParquetDataset` scans it lazily;
-`PipecatTorchIterableDataset` performs training-time decoding and fixed-window
-preprocessing.
+recreates and verifies the snapshot; `CanonicalPipecatDataset` uses the
+canonical index to stream the selected split and performs training-time decoding
+and fixed-window preprocessing.
 `reports/english_split_duplicate_audit.json` records the full English exact-audio
 duplicate scan.

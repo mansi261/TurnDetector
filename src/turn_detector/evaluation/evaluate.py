@@ -5,7 +5,6 @@ from __future__ import annotations
 import argparse
 from collections import defaultdict
 from datetime import datetime, timezone
-import hashlib
 import json
 import math
 from pathlib import Path
@@ -17,8 +16,10 @@ import numpy as np
 import torch
 
 from turn_detector.data_loader import CanonicalEvaluationDataset
+from turn_detector.evaluation.metrics import calibration, score_distribution
 from turn_detector.models import WaveformFeatureExtractor, load_model_checkpoint
 from turn_detector.training.train import binary_metrics, read_config, select_device
+from turn_detector.utils import file_sha256
 
 
 def parse_args() -> argparse.Namespace:
@@ -65,20 +66,13 @@ def predict_waveforms(model, extractor, waveforms, device, batch_size: int) -> n
     return np.concatenate(results) if results else np.empty(0, dtype=np.float32)
 
 
-def file_sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as stream:
-        while chunk := stream.read(8 * 1024 * 1024):
-            digest.update(chunk)
-    return digest.hexdigest()
-
-
 def summarize_events(events: list[dict[str, Any]]) -> dict[str, Any]:
     holds = [event for event in events if event["label"] == "hold"]
     endings = [event for event in events if event["label"] == "end"]
     delays = [event["detection_delay_s"] for event in endings if event["detection_delay_s"] is not None]
     premature = sum(event["triggered"] for event in holds)
     detected_endings = sum(event["triggered"] for event in endings)
+    missed_endings = sum(not event["triggered"] for event in endings)
     emitted = premature + detected_endings
     return {
         "events": len(events),
@@ -89,8 +83,11 @@ def summarize_events(events: list[dict[str, Any]]) -> dict[str, Any]:
         "emitted_responses": emitted,
         "premature_fraction_of_emitted": premature / max(1, emitted),
         "detected_endings": detected_endings,
-        "missed_endings": sum(not event["triggered"] for event in endings),
-        "missed_ending_rate": sum(not event["triggered"] for event in endings) / max(1, len(endings)),
+        "missed_endings": missed_endings,
+        "missed_ending_rate": missed_endings / max(1, len(endings)),
+        "total_causal_event_errors": premature + missed_endings,
+        "total_causal_event_error_rate": (premature + missed_endings)
+        / max(1, len(events)),
         "repeat_trigger_opportunities": sum(event["positive_frames_after_first"] for event in events),
         "detected_end_delay_median_s": statistics.median(delays) if delays else None,
         "detected_end_delay_p95_s": float(np.percentile(delays, 95)) if delays else None,
@@ -257,8 +254,22 @@ def main() -> None:
         "language": config["dataset"]["language"],
         "language_label": "ENG",
         "evaluation_partition": args.partition,
+        "runtime": {
+            "device": str(device),
+            "torch_version": torch.__version__,
+            "numpy_version": np.__version__,
+        },
         "dataset_revision": index_metadata["livekit_revision"],
         "canonical_schema_version": int(index_metadata["schema_version"]),
+        "dataset_counts": {
+            "turns": len({decision.source_id for decision in dataset.decisions}),
+            "conversation_groups": len(
+                {decision.group_id for decision in dataset.decisions}
+            ),
+            "events": len(dataset.decisions),
+            "hold_events": int(np.sum(labels == 0)),
+            "end_events": int(np.sum(labels == 1)),
+        },
         "scoring_code_sha256": file_sha256(Path(__file__)),
         "causal_contract": "Every score uses audio samples at or before its timestamp.",
         "protocol": {
@@ -274,7 +285,11 @@ def main() -> None:
             "debounce": None,
             "timeout": None,
         },
-        "full_span_metrics": span_metrics,
+        "full_span_metrics": {
+            **span_metrics,
+            "score_distribution": score_distribution(labels, probabilities),
+            "calibration": calibration(labels, probabilities),
+        },
         "causal_replay": replay,
         "fixed_silence_baselines": {
             str(seconds): evaluate_fixed_silence(dataset, seconds)

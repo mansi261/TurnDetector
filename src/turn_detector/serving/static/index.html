@@ -27,6 +27,9 @@
     canvas { display: block; width: 100%; height: 280px; background: #0f1622; border-radius: 12px; }
     .controls, .dashboard-head { display: flex; align-items: center; gap: 12px; margin-top: 18px; flex-wrap: wrap; }
     .dashboard-head { justify-content: space-between; margin: 0 0 18px; }
+    .model-picker { display: flex; align-items: center; gap: 8px; color: #9caac3; font-size: 13px; }
+    select { border: 1px solid #40516d; border-radius: 999px; padding: 9px 34px 9px 13px; background: #0f1622; color: #eef3ff; font: inherit; }
+    select:disabled { opacity: .55; }
     button { border: 0; border-radius: 999px; padding: 11px 18px; font: inherit; font-weight: 700; cursor: pointer; }
     #start { background: #7bd6c3; color: #08100f; }
     #stop { background: #303c53; color: #eef3ff; }
@@ -87,11 +90,14 @@
         </div>
         <canvas id="timeline" aria-label="End-of-turn probability timeline"></canvas>
         <div class="controls">
+          <label class="model-picker" for="model-select">Model
+            <select id="model-select" disabled aria-label="Turn detection model"></select>
+          </label>
           <button id="start" disabled>Start microphone</button>
           <button id="stop" disabled>Stop</button>
           <span id="status">Checking service…</span>
         </div>
-        <p class="note">The demo sends the latest audio window about three times per second. That cadence only updates the chart; it is not a hard-coded silence rule. Server processing covers preprocessing and inference, not browser network time.</p>
+        <p class="note">The demo sends only new microphone samples about three times per second. The server keeps the latest eight-second feature window for this session. That cadence updates the chart; it is not a hard-coded silence rule.</p>
       </section>
     </section>
 
@@ -106,10 +112,9 @@
 
       <div class="dashboard-grid">
         <div class="metric"><span class="label">Prediction requests</span><span class="value" id="metric-requests">—</span><span class="target" id="metric-success">—</span></div>
-        <div class="metric"><span class="label">Error rate</span><span class="value" id="metric-errors">—</span><span class="target">Target &lt; 1%</span></div>
         <div class="metric"><span class="label">Predictions / minute</span><span class="value" id="metric-throughput">—</span><span class="target">Rolling 60 seconds</span></div>
+        <div class="metric"><span class="label">API latency p50</span><span class="value" id="metric-p50">—</span><span class="target">Median latency</span></div>
         <div class="metric"><span class="label">API latency p95</span><span class="value" id="metric-p95">—</span><span class="target">Target &lt; 100 ms</span></div>
-        <div class="metric"><span class="label">API latency p99</span><span class="value" id="metric-p99">—</span><span class="target">Tail latency</span></div>
         <div class="metric"><span class="label">Average p(end)</span><span class="value" id="metric-probability">—</span><span class="target">Successful requests</span></div>
         <div class="metric"><span class="label">Hold decisions</span><span class="value" id="metric-holds">—</span><span class="target" id="metric-hold-rate">—</span></div>
         <div class="metric"><span class="label">End decisions</span><span class="value" id="metric-ends">—</span><span class="target" id="metric-end-rate">—</span></div>
@@ -130,7 +135,7 @@
         <section class="panel table-panel">
           <h2>Latency percentiles</h2>
           <table>
-            <thead><tr><th>Stage</th><th>p50</th><th>p95</th><th>p99</th></tr></thead>
+            <thead><tr><th>Stage</th><th>p50</th><th>p95</th></tr></thead>
             <tbody id="latency-table"></tbody>
           </table>
         </section>
@@ -152,13 +157,15 @@
 
   <script>
     const targetRate = 16000;
-    const windowSeconds = 8;
+    const maximumPendingSamples = targetRate * 8;
     const sendEveryMs = 350;
     const points = [];
     const el = id => document.getElementById(id);
     const timeline = el('timeline');
-    let context, stream, processor, source, timer, startedAt, dashboardTimer, lastMetrics;
-    let chunks = [], sampleCount = 0, inFlight = false, listening = false, requestController;
+    let context, stream, processor, source, timer, startedAt, dashboardTimer, lastMetrics, sessionId;
+    let availableModels = new Map();
+    let pendingChunks = [], pendingSampleCount = 0, resampleTail = new Float32Array(0), resamplePosition = 0;
+    let inFlight = false, listening = false, requestController;
 
     function prepareCanvas(canvas) {
       const ratio = window.devicePixelRatio || 1;
@@ -210,44 +217,60 @@
       ctx.fillStyle = '#74839c'; ctx.fillText('last 30 seconds', width - 104, height - 8);
     }
 
-    function resample(input, fromRate) {
+    function resampleChunk(input, fromRate) {
       if (fromRate === targetRate) return input;
-      const length = Math.round(input.length * targetRate / fromRate);
-      const output = new Float32Array(length);
+      const combined = new Float32Array(resampleTail.length + input.length);
+      combined.set(resampleTail); combined.set(input, resampleTail.length);
       const ratio = fromRate / targetRate;
-      for (let i = 0; i < length; i++) {
-        const position = i * ratio, left = Math.floor(position), right = Math.min(left + 1, input.length - 1);
-        const mix = position - left;
-        output[i] = input[left] * (1 - mix) + input[right] * mix;
+      let count = 0, position = resamplePosition;
+      while (position + 1 < combined.length) { count++; position += ratio; }
+      const output = new Float32Array(count);
+      position = resamplePosition;
+      for (let index = 0; index < count; index++, position += ratio) {
+        const left = Math.floor(position), mix = position - left;
+        output[index] = combined[left] * (1 - mix) + combined[left + 1] * mix;
       }
+      const consumed = Math.floor(position);
+      resampleTail = combined.slice(consumed); resamplePosition = position - consumed;
       return output;
     }
 
-    function encodeWav(samples) {
-      const buffer = new ArrayBuffer(44 + samples.length * 2), view = new DataView(buffer);
-      const text = (offset, value) => [...value].forEach((character, index) => view.setUint8(offset + index, character.charCodeAt(0)));
-      text(0, 'RIFF'); view.setUint32(4, 36 + samples.length * 2, true); text(8, 'WAVE'); text(12, 'fmt ');
-      view.setUint32(16, 16, true); view.setUint16(20, 1, true); view.setUint16(22, 1, true);
-      view.setUint32(24, targetRate, true); view.setUint32(28, targetRate * 2, true);
-      view.setUint16(32, 2, true); view.setUint16(34, 16, true); text(36, 'data');
-      view.setUint32(40, samples.length * 2, true);
-      samples.forEach((sample, index) => view.setInt16(44 + index * 2, Math.max(-1, Math.min(1, sample)) * 0x7fff, true));
-      return new Blob([buffer], { type: 'audio/wav' });
+    function encodePcm(samples) {
+      const buffer = new ArrayBuffer(samples.length * 2), view = new DataView(buffer);
+      samples.forEach((sample, index) => view.setInt16(index * 2, Math.max(-1, Math.min(1, sample)) * 0x7fff, true));
+      return buffer;
     }
 
-    function recentAudio() {
-      const joined = new Float32Array(sampleCount);
+    function takePendingAudio() {
+      const joined = new Float32Array(pendingSampleCount);
       let offset = 0;
-      chunks.forEach(chunk => { joined.set(chunk, offset); offset += chunk.length; });
-      return resample(joined, context.sampleRate);
+      pendingChunks.forEach(chunk => { joined.set(chunk, offset); offset += chunk.length; });
+      pendingChunks = []; pendingSampleCount = 0;
+      return joined;
     }
 
-    async function sendWindow() {
-      if (inFlight || !sampleCount || !listening) return;
+    function queuePendingAudio(samples) {
+      pendingChunks.push(samples); pendingSampleCount += samples.length;
+      while (pendingSampleCount > maximumPendingSamples) {
+        const excess = pendingSampleCount - maximumPendingSamples;
+        if (pendingChunks[0].length <= excess) {
+          pendingSampleCount -= pendingChunks.shift().length;
+        } else {
+          pendingChunks[0] = pendingChunks[0].slice(excess);
+          pendingSampleCount -= excess;
+        }
+      }
+    }
+
+    async function sendChunk() {
+      if (inFlight || !pendingSampleCount || !listening || !sessionId) return;
+      const samples = takePendingAudio();
       inFlight = true; requestController = new AbortController();
       try {
-        const form = new FormData(); form.append('audio', encodeWav(recentAudio()), 'microphone.wav');
-        const response = await fetch('/predict', { method: 'POST', body: form, signal: requestController.signal });
+        const response = await fetch(`/stream/${sessionId}/predict`, {
+          method: 'POST', body: encodePcm(samples), signal: requestController.signal,
+          headers: { 'Content-Type': 'application/octet-stream' },
+        });
         const result = await response.json();
         if (!response.ok) throw new Error(result.detail || response.statusText);
         if (!listening) return;
@@ -258,32 +281,52 @@
         points.push({ t: (performance.now() - startedAt) / 1000, p: result.p_end });
         drawTimeline();
       } catch (error) {
-        if (error.name !== 'AbortError') el('status').textContent = `Inference error: ${error.message}`;
+        if (error.name !== 'AbortError') {
+          const message = error.message;
+          await stop();
+          el('status').textContent = `Inference stopped: ${message}`;
+        }
       } finally { requestController = undefined; inFlight = false; }
     }
 
     async function start() {
+      const selectedModelId = el('model-select').value;
+      el('model-select').disabled = true;
       try {
         stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true } });
-        context = new AudioContext(); source = context.createMediaStreamSource(stream);
+        context = new AudioContext({ sampleRate: targetRate }); source = context.createMediaStreamSource(stream);
+        const sessionResponse = await fetch(`/stream?model=${encodeURIComponent(selectedModelId)}`, { method: 'POST' });
+        const session = await sessionResponse.json();
+        if (!sessionResponse.ok) throw new Error(session.detail || 'stream is unavailable');
+        sessionId = session.session_id;
         processor = context.createScriptProcessor(4096, 1, 1);
         processor.onaudioprocess = event => {
           const chunk = new Float32Array(event.inputBuffer.getChannelData(0));
-          chunks.push(chunk); sampleCount += chunk.length;
-          const maximum = Math.round(context.sampleRate * windowSeconds);
-          while (sampleCount - chunks[0].length >= maximum) sampleCount -= chunks.shift().length;
+          const resampled = resampleChunk(chunk, context.sampleRate);
+          if (resampled.length) queuePendingAudio(resampled);
         };
         source.connect(processor); processor.connect(context.destination);
-        chunks = []; sampleCount = 0; points.length = 0; startedAt = performance.now(); listening = true;
-        timer = setInterval(sendWindow, sendEveryMs);
-        el('start').disabled = true; el('stop').disabled = false; el('status').textContent = 'Listening'; drawTimeline();
-      } catch (error) { el('status').textContent = `Microphone error: ${error.message}`; }
+        pendingChunks = []; pendingSampleCount = 0; resampleTail = new Float32Array(0); resamplePosition = 0;
+        points.length = 0; startedAt = performance.now(); listening = true;
+        timer = setInterval(sendChunk, sendEveryMs);
+        el('start').disabled = true; el('stop').disabled = false; el('status').textContent = `${session.display_name} · listening`; drawTimeline();
+      } catch (error) {
+        processor?.disconnect(); source?.disconnect(); stream?.getTracks().forEach(track => track.stop());
+        await context?.close();
+        if (sessionId) await fetch(`/stream/${sessionId}`, { method: 'DELETE' }).catch(() => {});
+        sessionId = undefined;
+        el('model-select').disabled = false;
+        el('status').textContent = `Microphone error: ${error.message}`;
+      }
     }
 
     async function stop() {
       listening = false; clearInterval(timer); requestController?.abort();
       processor?.disconnect(); source?.disconnect(); stream?.getTracks().forEach(track => track.stop());
-      await context?.close(); el('start').disabled = false; el('stop').disabled = true; el('status').textContent = 'Stopped';
+      await context?.close();
+      if (sessionId) await fetch(`/stream/${sessionId}`, { method: 'DELETE' }).catch(() => {});
+      sessionId = undefined; pendingChunks = []; pendingSampleCount = 0;
+      el('model-select').disabled = false; el('start').disabled = false; el('stop').disabled = true; el('status').textContent = 'Stopped';
     }
 
     const formatMs = value => value == null ? '—' : `${value.toFixed(1)} ms`;
@@ -343,10 +386,9 @@
       const decisionTotal = decisions.hold + decisions.end;
       el('metric-requests').textContent = requests.total.toLocaleString();
       el('metric-success').textContent = `${requests.successful.toLocaleString()} successful`;
-      el('metric-errors').textContent = formatPercent(requests.error_rate);
       el('metric-throughput').textContent = requests.requests_last_minute.toLocaleString();
+      el('metric-p50').textContent = formatMs(metrics.latency_ms.api_total.p50);
       el('metric-p95').textContent = formatMs(metrics.latency_ms.api_total.p95);
-      el('metric-p99').textContent = formatMs(metrics.latency_ms.api_total.p99);
       el('metric-probability').textContent = outputs.average_p_end == null ? '—' : outputs.average_p_end.toFixed(3);
       el('metric-holds').textContent = decisions.hold.toLocaleString();
       el('metric-ends').textContent = decisions.end.toLocaleString();
@@ -359,7 +401,7 @@
         ['Preprocessing', metrics.latency_ms.preprocess],
         ['Inference', metrics.latency_ms.inference],
       ];
-      el('latency-table').innerHTML = rows.map(([name, values]) => `<tr><td>${name}</td><td>${formatMs(values.p50)}</td><td>${formatMs(values.p95)}</td><td>${formatMs(values.p99)}</td></tr>`).join('');
+      el('latency-table').innerHTML = rows.map(([name, values]) => `<tr><td>${name}</td><td>${formatMs(values.p50)}</td><td>${formatMs(values.p95)}</td></tr>`).join('');
       el('identity-model').textContent = metrics.model_version || 'Not loaded';
       el('identity-threshold').textContent = metrics.threshold == null ? '—' : metrics.threshold.toFixed(2);
       el('identity-service').textContent = metrics.service_version;
@@ -397,13 +439,31 @@
       try {
         const response = await fetch('/ready'), result = await response.json();
         if (!response.ok) throw new Error(result.detail?.error || 'model is not ready');
-        el('threshold').textContent = result.threshold.toFixed(2);
-        el('status').textContent = `${result.model_version} · ready`;
-        el('start').disabled = false; drawTimeline();
+        const models = result.models?.length ? result.models : [{
+          id: result.default_model_id || 'default', display_name: result.model_version,
+          model_version: result.model_version, threshold: result.threshold,
+        }];
+        availableModels = new Map(models.map(model => [model.id, model]));
+        el('model-select').replaceChildren(...models.map(model => new Option(model.display_name, model.id)));
+        el('model-select').value = result.default_model_id || models[0].id;
+        el('model-select').disabled = false;
+        applySelectedModel();
+        el('start').disabled = false;
       } catch (error) { el('status').textContent = `Unavailable: ${error.message}`; }
     }
 
+    function applySelectedModel() {
+      const model = availableModels.get(el('model-select').value);
+      if (!model) return;
+      points.length = 0;
+      el('probability').textContent = '—'; el('decision').textContent = '—'; el('timing').textContent = '—';
+      el('threshold').textContent = Number(model.threshold).toFixed(2);
+      el('status').textContent = `${model.display_name} · ready`;
+      drawTimeline();
+    }
+
     document.querySelectorAll('.tab').forEach(button => button.addEventListener('click', () => selectView(button.dataset.view)));
+    el('model-select').addEventListener('change', applySelectedModel);
     el('start').addEventListener('click', start); el('stop').addEventListener('click', stop); el('refresh').addEventListener('click', refreshMetrics);
     window.addEventListener('resize', () => { drawTimeline(); if (lastMetrics) { drawLatencyChart(lastMetrics); drawDistributionChart(lastMetrics); } });
     initialize();

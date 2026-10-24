@@ -4,14 +4,20 @@ WORKDIR /app
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
-    PYTHONPATH=/app/src \
-    TURN_DETECTOR_CHECKPOINT=/app/model/model.fp32.onnx \
-    TURN_DETECTOR_METADATA=/app/model/model_metadata.json \
-    TURN_DETECTOR_MODEL_VERSION=english-whisper-tiny-baseline-v0 \
-    TURN_DETECTOR_THRESHOLD=0.5
+    PYTHONPATH=/app/src
 
 COPY requirements-serving.txt ./
-RUN pip install --no-cache-dir -r requirements-serving.txt
+RUN python -m pip install --no-cache-dir --retries 10 --timeout 120 \
+    -r requirements-serving.txt
+
+ENV TURN_DETECTOR_CHECKPOINT=/app/model/model.fp32.onnx \
+    TURN_DETECTOR_METADATA=/app/model/model_metadata.json \
+    TURN_DETECTOR_MODEL_MANIFEST=/app/model/serving_models.json \
+    TURN_DETECTOR_MODEL_VERSION=english-whisper-tiny-baseline-v0 \
+    TURN_DETECTOR_THRESHOLD=0.5 \
+    TURN_DETECTOR_ORT_INTRA_OP_THREADS=2 \
+    TURN_DETECTOR_ORT_INTER_OP_THREADS=1 \
+    TURN_DETECTOR_ORT_EXECUTION_MODE=sequential
 
 COPY src ./src
 COPY model ./model

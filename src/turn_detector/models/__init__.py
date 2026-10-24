@@ -1,8 +1,13 @@
 """Model definitions, preprocessing, and checkpoint loading."""
 
-from .features import WaveformFeatureExtractor
+from .features import StreamingWhisperFeatureBuffer, WaveformFeatureExtractor
 
-__all__ = ["WaveformFeatureExtractor", "WhisperTurnDetector", "load_model_checkpoint"]
+__all__ = [
+    "StreamingWhisperFeatureBuffer",
+    "WaveformFeatureExtractor",
+    "WhisperTurnDetector",
+    "load_model_checkpoint",
+]
 
 
 def __getattr__(name: str):

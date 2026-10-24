@@ -1,5 +1,11 @@
 # Local documents
 /*.pdf
+/ARCHITECTURE_DECISIONS.md
+/ARCHITECTURE_DECISIONS_MULTILINGUAL.md
+/MULTILINGUAL_IMPLEMENTATION_PLAN.md
+/TASK_QUEUE.md
+/optimization_tracker.md
+/reports/production_monitoring_and_improvement.md
 
 # Downloaded and generated datasets
 /data/
